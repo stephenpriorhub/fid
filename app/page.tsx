@@ -1,4 +1,5 @@
 import { getGraph } from '@/lib/directory'
+import { checkSources } from '@/lib/source-health'
 import DirectoryBrowser, { type EntityItem } from '@/components/DirectoryBrowser'
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +10,8 @@ export default async function HomePage({
   searchParams: Promise<{ type?: string }>
 }) {
   const { type } = await searchParams
-  const graph = await getGraph()
+  const [graph, sources] = await Promise.all([getGraph(), checkSources()])
+  const down = sources.filter((s) => !s.ok)
 
   const items: EntityItem[] = [
     ...graph.gurus.map<EntityItem>((g) => ({
@@ -41,6 +43,15 @@ export default async function HomePage({
 
   return (
     <div>
+      {down.length > 0 && (
+        <div className="mb-5 rounded-lg border border-[var(--bad)] bg-[var(--bad)]/10 px-4 py-3 text-sm">
+          <span className="font-semibold text-[var(--bad)]">Data source issue:</span>{' '}
+          {down
+            .map((s) => `${s.name} unreachable${s.status ? ` (HTTP ${s.status})` : ''}`)
+            .join('; ')}
+          . Promos/emails may be incomplete until this is resolved.
+        </div>
+      )}
       <div className="mb-6">
         <h1 className="text-2xl font-bold">FinPub Intelligence Database</h1>
         <p className="text-sm text-[var(--muted)] mt-1">
