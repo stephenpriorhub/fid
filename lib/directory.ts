@@ -277,8 +277,15 @@ export async function getGraph(): Promise<EntityGraph> {
   const dir = getDirectoryGraph()
   const { getEntitiesGraph } = await import('./entities')
   const ent = await getEntitiesGraph()
-  if (!ent) return dir
-  return mergeGraphs(ent, dir)
+  const merged = ent ? mergeGraphs(ent, dir) : dir
+
+  // Defensive de-misclassification: upstream review data sometimes lists a product
+  // name (e.g. "Oxford Income Letter") as a publisher. If a publisher slug is also
+  // a product slug, it's a misfiled product — drop the bogus publisher node so it
+  // doesn't get its own publisher page. (The real product page still exists.)
+  const productSlugs = new Set(merged.products.map((p) => p.slug))
+  merged.publishers = merged.publishers.filter((pub) => !productSlugs.has(pub.slug))
+  return merged
 }
 
 export async function findGuruBySlug(slug: string): Promise<GuruNode | undefined> {
