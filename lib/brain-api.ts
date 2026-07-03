@@ -52,19 +52,16 @@ async function viaBrainApi(p: EnrichmentPayload): Promise<WriteResult | null> {
         markdown: p.markdown,
       }),
     })
-    if (res.status === 404) return null // kind not supported yet → fall back
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+    // Any non-success (404, "Unknown kind: finpub-enrichment" until brain-map adds
+    // the handler, auth failure, transient 5xx) → fall through to the GitHub write
+    // so the enrichment still lands. Only a real success short-circuits.
     if (!res.ok || json.ok === false) {
-      return {
-        ok: false,
-        via: 'brain-api',
-        target: p.repoPath,
-        bytes: p.markdown.length,
-        error: json.error || `Brain API ${res.status}`,
-      }
+      console.warn(`[brain-api] finpub-enrichment not persisted (${res.status}: ${json.error || 'error'}) — falling back to GitHub`)
+      return null
     }
     return { ok: true, via: 'brain-api', target: p.repoPath, bytes: p.markdown.length }
-  } catch (e) {
+  } catch {
     return null // network error → try github fallback
   }
 }
