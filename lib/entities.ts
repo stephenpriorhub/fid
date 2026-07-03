@@ -45,8 +45,13 @@ export async function getEntitiesGraph(): Promise<EntityGraph | null> {
   const base = getEnv('PROMO_API_URL')?.replace(/\/$/, '')
   if (!base) return null
   let data: ApiResponse
+  const token = getEnv('HUB_API_TOKEN')
   try {
-    const res = await fetch(`${base}/api/entities`, { next: { revalidate: REVALIDATE } })
+    const res = await fetch(`${base}/api/entities`, {
+      // Promo Analyzer's API requires the shared service token (proxy.ts wall).
+      headers: token ? { 'x-hub-token': token } : {},
+      next: { revalidate: REVALIDATE },
+    })
     if (!res.ok) return null
     data = (await res.json()) as ApiResponse
   } catch {

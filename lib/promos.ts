@@ -35,8 +35,10 @@ function apiUrl(): string | undefined {
   return getEnv('PROMO_API_URL')?.replace(/\/$/, '')
 }
 function authHeaders(): Record<string, string> {
-  const token = getEnv('PROMO_API_TOKEN')
-  return token ? { authorization: `Bearer ${token}` } : {}
+  // Promo Analyzer's API is behind an OxfordHub auth wall (proxy.ts) that admits
+  // server-to-server callers via the shared x-hub-token service identity.
+  const token = getEnv('HUB_API_TOKEN')
+  return token ? { 'x-hub-token': token } : {}
 }
 
 export async function getAllReviews(): Promise<PromoReview[]> {

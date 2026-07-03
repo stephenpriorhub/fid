@@ -36,8 +36,10 @@ function appUrl(): string {
   return (getEnv('ISPY_APP_URL') || getEnv('ISPY_API_URL') || '').replace(/\/$/, '')
 }
 function authHeaders(): Record<string, string> {
-  const token = getEnv('ISPY_API_TOKEN')
-  return token ? { authorization: `Bearer ${token}` } : {}
+  // If iSpy's API sits behind the same OxfordHub auth wall, admit via the shared
+  // service token; harmless if iSpy doesn't gate reads.
+  const token = getEnv('HUB_API_TOKEN')
+  return token ? { 'x-hub-token': token } : {}
 }
 
 async function getJson<T>(path: string): Promise<T | null> {
