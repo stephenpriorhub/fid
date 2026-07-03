@@ -51,6 +51,18 @@ export interface EntityGraph {
 
 const CODE_RE = /^[A-Z][A-Za-z0-9]{0,7}$/ // short uppercase code like WAR, TPU, PMK, MTLIV
 
+/**
+ * Normalize a parent-company cell to a clean publisher identity so it dedupes
+ * against Promo Analyzer's clean names: drop a trailing "(...)" family/status
+ * suffix (e.g. "Paradigm Press (Agora)" → "Paradigm Press",
+ * "Money Map Press (Agora, defunct)" → "Money Map Press"). Falls back to
+ * "Independent" when the cell is only a parenthetical note.
+ */
+function normalizePublisher(name: string): string {
+  const stripped = name.replace(/\s*\([^)]*\)\s*$/, '').trim()
+  return stripped || 'Independent'
+}
+
 function splitList(cell: string): string[] {
   return cell
     .split(',')
@@ -115,7 +127,7 @@ export function parseDirectoryRows(md: string): DirectoryRow[] {
       productName: name,
       productCode: code,
       isAlias,
-      publisher: stripWikilinks(parent),
+      publisher: normalizePublisher(stripWikilinks(parent)),
       strategies: splitList(strategies),
       topics: splitList(topics),
       confidence: (confidence.split(/[\s(]/)[0] || confidence).toLowerCase(),
@@ -196,20 +208,85 @@ export function buildGraph(rows: DirectoryRow[]): EntityGraph {
   return { gurus, products, publishers, rows }
 }
 
-/** Load + parse the directory fresh each call (cheap; keeps pages current after a vault pull). */
-export function getGraph(): EntityGraph {
+/** Parse the directory markdown fresh each call (cheap; current after a vault pull). */
+export function getDirectoryGraph(): EntityGraph {
   const path = getDirectoryPath()
   if (!existsSync(path)) return { gurus: [], products: [], publishers: [], rows: [] }
   const md = readFileSync(path, 'utf8')
   return buildGraph(parseDirectoryRows(md))
 }
 
-export function findGuruBySlug(slug: string): GuruNode | undefined {
-  return getGraph().gurus.find((g) => g.slug === slug)
+const uniq = (arr: string[], more: string[]) => {
+  for (const v of more) if (v && !arr.includes(v)) arr.push(v)
+  return arr
 }
-export function findProductBySlug(slug: string): ProductNode | undefined {
-  return getGraph().products.find((p) => p.slug === slug)
+
+/**
+ * Merge two graphs by slug. `base` wins for entity existence and scalar fields
+ * (code, publisher); string-array fields are unioned; `overlay` contributes
+ * strategies/topics and any entities `base` is missing.
+ */
+export function mergeGraphs(base: EntityGraph, overlay: EntityGraph): EntityGraph {
+  const gurus = new Map(base.gurus.map((g) => [g.slug, { ...g }]))
+  const products = new Map(base.products.map((p) => [p.slug, { ...p }]))
+  const publishers = new Map(base.publishers.map((p) => [p.slug, { ...p }]))
+
+  for (const g of overlay.gurus) {
+    const cur = gurus.get(g.slug)
+    if (cur) {
+      uniq(cur.publishers, g.publishers)
+      uniq(cur.products, g.products)
+      uniq(cur.strategies, g.strategies)
+      uniq(cur.topics, g.topics)
+    } else gurus.set(g.slug, { ...g })
+  }
+  for (const p of overlay.products) {
+    const cur = products.get(p.slug)
+    if (cur) {
+      cur.code = cur.code || p.code
+      cur.publisher = cur.publisher || p.publisher
+      uniq(cur.gurus, p.gurus)
+      uniq(cur.strategies, p.strategies)
+      uniq(cur.topics, p.topics)
+      uniq(cur.aliases, p.aliases)
+    } else products.set(p.slug, { ...p })
+  }
+  for (const p of overlay.publishers) {
+    const cur = publishers.get(p.slug)
+    if (cur) {
+      uniq(cur.gurus, p.gurus)
+      uniq(cur.products, p.products)
+    } else publishers.set(p.slug, { ...p })
+  }
+
+  const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
+  return {
+    gurus: [...gurus.values()].sort(byName),
+    products: [...products.values()].sort(byName),
+    publishers: [...publishers.values()].sort(byName),
+    rows: base.rows.length ? base.rows : overlay.rows,
+  }
 }
-export function findPublisherBySlug(slug: string): PublisherNode | undefined {
-  return getGraph().publishers.find((p) => p.slug === slug)
+
+/**
+ * The unified entity graph FID renders from. Spine = Promo Analyzer's reconciled
+ * `/api/entities` (superset, self-correcting); overlaid with the brain directory's
+ * strategies/topics/confidence. Falls back to directory-only if the API is down.
+ */
+export async function getGraph(): Promise<EntityGraph> {
+  const dir = getDirectoryGraph()
+  const { getEntitiesGraph } = await import('./entities')
+  const ent = await getEntitiesGraph()
+  if (!ent) return dir
+  return mergeGraphs(ent, dir)
+}
+
+export async function findGuruBySlug(slug: string): Promise<GuruNode | undefined> {
+  return (await getGraph()).gurus.find((g) => g.slug === slug)
+}
+export async function findProductBySlug(slug: string): Promise<ProductNode | undefined> {
+  return (await getGraph()).products.find((p) => p.slug === slug)
+}
+export async function findPublisherBySlug(slug: string): Promise<PublisherNode | undefined> {
+  return (await getGraph()).publishers.find((p) => p.slug === slug)
 }

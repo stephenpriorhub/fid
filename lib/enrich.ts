@@ -132,7 +132,7 @@ export async function enrichGuru(name: string): Promise<EnrichOutcome> {
 }
 
 export async function enrichProduct(name: string): Promise<EnrichOutcome> {
-  const node = getGraph().products.find((p) => p.name === name)
+  const node = (await getGraph()).products.find((p) => p.name === name)
   const promos = await getPromosForProduct(name, node?.aliases || [])
   if (promos.length === 0) {
     const o: EnrichOutcome = { entityType: 'product', entityName: name, status: 'no-promos', promoCount: 0 }

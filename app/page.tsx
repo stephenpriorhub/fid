@@ -9,7 +9,7 @@ export default async function HomePage({
   searchParams: Promise<{ type?: string }>
 }) {
   const { type } = await searchParams
-  const graph = getGraph()
+  const graph = await getGraph()
 
   const items: EntityItem[] = [
     ...graph.gurus.map<EntityItem>((g) => ({

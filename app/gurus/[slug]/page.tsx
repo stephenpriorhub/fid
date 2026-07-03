@@ -14,16 +14,17 @@ export const dynamic = 'force-dynamic'
 
 export default async function GuruPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const node = findGuruBySlug(slug)
+  const node = await findGuruBySlug(slug)
   if (!node) notFound()
 
-  const [profile, promos, emails] = await Promise.all([
+  const [profile, promos, emails, graph] = await Promise.all([
     Promise.resolve(getGuruProfile(node.name)),
     getPromosForGuru(node.name),
     getRecentEmails({ kind: 'guru', name: node.name }),
+    getGraph(),
   ])
 
-  const products = getGraph().products.filter((p) => node.products.includes(p.name))
+  const products = graph.products.filter((p) => node.products.includes(p.name))
 
   return (
     <div>

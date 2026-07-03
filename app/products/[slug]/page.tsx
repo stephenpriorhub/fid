@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const node = findProductBySlug(slug)
+  const node = await findProductBySlug(slug)
   if (!node) notFound()
 
   const [profile, promos, emails] = await Promise.all([

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   const type = sp.get('type')
   const entity = sp.get('entity')
   const limit = Math.min(parseInt(sp.get('limit') ?? '25'), 100)
-  const graph = getGraph()
+  const graph = await getGraph()
   const results: EnrichOutcome[] = []
 
   if (entity) {

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function PublisherPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const node = findPublisherBySlug(slug)
+  const node = await findPublisherBySlug(slug)
   if (!node) notFound()
 
   const ctx = getPublisherContext(node.name)
