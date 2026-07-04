@@ -31,6 +31,10 @@ interface NamedEntity {
   name: string
 }
 
+interface GuruEntity extends NamedEntity {
+  lists?: { list?: { id: string; name: string } }[]
+}
+
 function apiUrl(): string | undefined {
   return getEnv('ISPY_API_URL')?.replace(/\/$/, '')
 }
@@ -95,41 +99,52 @@ export async function getRecentEmails(
   filter: IspyFilter,
   limit = 8
 ): Promise<RecentEmailsResult> {
-  const id = await resolveId(filter)
-  if (!id) return { emails: [], total: 0, viewAllUrl: null }
-
-  const param = filter.kind // guru | publisher | list — matches iSpy /emails query keys
-  // iSpy's guru filter expands to a guru's "secondary voices", which pulls in
-  // house-wide emails that don't actually feature the guru. Over-fetch and
-  // strict-filter to emails genuinely tagged with this guru so the profile only
-  // shows their own emails. (publisher/list filters are already precise.)
-  const fetchLimit = filter.kind === 'guru' ? Math.min(limit * 6, 60) : limit
-  const data = await getJson<{ emails: IspyEmail[]; total: number }>(
-    `/api/emails?${param}=${encodeURIComponent(id)}&limit=${fetchLimit}&sort=receivedAt&order=desc`
-  )
-  let emails = data?.emails ?? []
-  let total = data?.total ?? 0
+  const base = appUrl()
+  const withUrl = (e: IspyEmail) => ({ ...e, url: base ? `${base}/emails/${e.id}` : undefined })
 
   if (filter.kind === 'guru') {
-    const n = filter.name.trim().toLowerCase()
-    const strict = emails.filter((e) =>
-      (e.gurus ?? []).some((g) => g.guru?.name?.trim().toLowerCase() === n)
-    )
-    // Guard against a name-format mismatch wiping everything.
-    if (strict.length > 0 || emails.length === 0) {
-      total = strict.length
-      emails = strict
+    // iSpy tags an email with every guru MENTIONED in it, so a guru's raw feed is
+    // full of noise — roundups, house ads, and promos about OTHER gurus that merely
+    // name-drop them. Shared house lists (Trade of the Day, etc.) carry every MTA
+    // guru, so list membership is too broad. Keep an email only if it's genuinely
+    // the guru's: FROM them, SOLELY about them (they're the only tagged guru), or
+    // their name is in the subject line. A bare mention is dropped.
+    const gurus = (await getJson<GuruEntity[]>('/api/gurus')) ?? []
+    const nname = filter.name.trim().toLowerCase()
+    const g = gurus.find((x) => x.name?.trim().toLowerCase() === nname)
+    if (!g) return { emails: [], total: 0, viewAllUrl: null }
+
+    const last = nname.split(/\s+/).pop() || nname
+    const mentions = (s?: string | null) => {
+      const x = (s ?? '').toLowerCase()
+      return x.includes(nname) || (last.length > 3 && x.includes(last))
     }
+    const data = await getJson<{ emails: IspyEmail[]; total: number }>(
+      `/api/emails?guru=${encodeURIComponent(g.id)}&limit=60&sort=receivedAt&order=desc`
+    )
+    const relevant = (data?.emails ?? []).filter((e) => {
+      const fromThem = mentions(`${e.fromName ?? ''} ${e.fromEmail ?? ''}`)
+      const tagged = e.gurus ?? []
+      const soleSubject =
+        tagged.length === 1 && tagged[0].guru?.name?.trim().toLowerCase() === nname
+      const namedInSubject = mentions(e.subject)
+      return fromThem || soleSubject || namedInSubject
+    })
+    const viewAllUrl = base ? `${base}/emails?guru=${encodeURIComponent(g.id)}` : null
+    return { emails: relevant.slice(0, limit).map(withUrl), total: relevant.length, viewAllUrl }
   }
 
-  const base = appUrl()
+  // publisher / list filters are already precise in iSpy.
+  const id = await resolveId(filter)
+  if (!id) return { emails: [], total: 0, viewAllUrl: null }
+  const param = filter.kind
+  const data = await getJson<{ emails: IspyEmail[]; total: number }>(
+    `/api/emails?${param}=${encodeURIComponent(id)}&limit=${limit}&sort=receivedAt&order=desc`
+  )
   const viewAllUrl = base ? `${base}/emails?${param}=${encodeURIComponent(id)}` : null
   return {
-    emails: emails.slice(0, limit).map((e) => ({
-      ...e,
-      url: base ? `${base}/emails/${e.id}` : undefined,
-    })),
-    total,
+    emails: (data?.emails ?? []).map(withUrl),
+    total: data?.total ?? 0,
     viewAllUrl,
   }
 }
