@@ -5,6 +5,7 @@ import { slugify } from './slug'
 import {
   parseDoc,
   stripClaims,
+  dropSectionTree,
   extractMarkerBlock,
   stripWikilinks,
   type Section,
@@ -88,7 +89,13 @@ export function getGuruProfile(name: string): GuruProfile {
 
   const headshot = firstMatch(/Headshot:\s*`([^`]+)`/i, source)
 
-  const sections = stripClaims(doc.sections).filter((s) => s.body.trim().length > 0)
+  // Drop the verbose "Products" tree (parent + Backends/Frontend/etc. subsections)
+  // BEFORE the empty-body filter — the "## Products" H2 often has no direct body,
+  // so filtering empties first would strip the anchor and leave its children behind.
+  // The guru page renders a clean linked product list instead.
+  const sections = dropSectionTree(stripClaims(doc.sections), (s) =>
+    /^products$/i.test(s.heading.trim())
+  ).filter((s) => s.body.trim().length > 0)
 
   return {
     found: true,

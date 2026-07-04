@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { findGuruBySlug, getGraph } from '@/lib/directory'
 import { getGuruProfile } from '@/lib/gurus'
-import { dropSectionTree } from '@/lib/markdown'
 import { getPromosForGuru } from '@/lib/promos'
 import { getRecentEmails } from '@/lib/ispy'
 import { slugify } from '@/lib/slug'
@@ -85,13 +84,11 @@ export default async function GuruPage({ params }: { params: Promise<{ slug: str
           "Products" prose section is dropped — the linked Products list above
           replaces it. */}
       {profile.found ? (
-        dropSectionTree(profile.sections, (s) => /^products$/i.test(s.heading.trim())).map(
-          (s, i) => (
-            <Card key={i} title={s.heading}>
-              <Markdown>{s.body}</Markdown>
-            </Card>
-          )
-        )
+        profile.sections.map((s, i) => (
+          <Card key={i} title={s.heading}>
+            <Markdown>{s.body}</Markdown>
+          </Card>
+        ))
       ) : (
         <Card title="Profile">
           <p className="text-sm text-[var(--muted)]">
