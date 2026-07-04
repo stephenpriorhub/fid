@@ -99,18 +99,37 @@ export async function getRecentEmails(
   if (!id) return { emails: [], total: 0, viewAllUrl: null }
 
   const param = filter.kind // guru | publisher | list — matches iSpy /emails query keys
+  // iSpy's guru filter expands to a guru's "secondary voices", which pulls in
+  // house-wide emails that don't actually feature the guru. Over-fetch and
+  // strict-filter to emails genuinely tagged with this guru so the profile only
+  // shows their own emails. (publisher/list filters are already precise.)
+  const fetchLimit = filter.kind === 'guru' ? Math.min(limit * 6, 60) : limit
   const data = await getJson<{ emails: IspyEmail[]; total: number }>(
-    `/api/emails?${param}=${encodeURIComponent(id)}&limit=${limit}&sort=receivedAt&order=desc`
+    `/api/emails?${param}=${encodeURIComponent(id)}&limit=${fetchLimit}&sort=receivedAt&order=desc`
   )
+  let emails = data?.emails ?? []
+  let total = data?.total ?? 0
+
+  if (filter.kind === 'guru') {
+    const n = filter.name.trim().toLowerCase()
+    const strict = emails.filter((e) =>
+      (e.gurus ?? []).some((g) => g.guru?.name?.trim().toLowerCase() === n)
+    )
+    // Guard against a name-format mismatch wiping everything.
+    if (strict.length > 0 || emails.length === 0) {
+      total = strict.length
+      emails = strict
+    }
+  }
+
   const base = appUrl()
   const viewAllUrl = base ? `${base}/emails?${param}=${encodeURIComponent(id)}` : null
-  const emails = (data?.emails ?? []).map((e) => ({
-    ...e,
-    url: base ? `${base}/emails/${e.id}` : undefined,
-  }))
   return {
-    emails,
-    total: data?.total ?? 0,
+    emails: emails.slice(0, limit).map((e) => ({
+      ...e,
+      url: base ? `${base}/emails/${e.id}` : undefined,
+    })),
+    total,
     viewAllUrl,
   }
 }
