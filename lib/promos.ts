@@ -60,12 +60,12 @@ export async function getPerformanceByReview(): Promise<Record<string, PromoPerf
       next: { revalidate: REVALIDATE },
     })
     if (!res.ok) return {}
-    const views = (await res.json()) as {
-      record?: { stats?: Record<string, string> }
-      match?: { reviewId?: string } | null
-    }[]
+    // GET /api/performance returns { views: [{ record:{stats}, match:{reviewId} }], ... }
+    const data = (await res.json()) as {
+      views?: { record?: { stats?: Record<string, string> }; match?: { reviewId?: string } | null }[]
+    }
     const out: Record<string, PromoPerf> = {}
-    for (const v of Array.isArray(views) ? views : []) {
+    for (const v of data.views ?? []) {
       const rid = v.match?.reviewId
       const stats = v.record?.stats
       if (!rid || !stats) continue
@@ -74,8 +74,9 @@ export async function getPerformanceByReview(): Promise<Record<string, PromoPerf
         const val = k ? stats[k]?.trim() : undefined
         return val || undefined
       }
-      const orders = pick(/\border(s|ed|\s*volume)?\b/i)
-      const revenue = pick(/revenue|net\s*sales|gross|\bsales\b/i)
+      // Plural "orders" avoids decoys like "Clicks to Order From" / "Order Form CR%".
+      const orders = pick(/\borders\b/i)
+      const revenue = pick(/\brevenue\b/i)
       if (orders || revenue) out[rid] = { orders, revenue }
     }
     return out
