@@ -1,5 +1,5 @@
 import { Card, Chip, scoreTone } from './ui'
-import type { PromoReview } from '@/lib/promos'
+import { promoAppUrl, type PromoReview } from '@/lib/promos'
 
 function fmtDate(iso?: string): string {
   if (!iso) return ''
@@ -12,43 +12,58 @@ function title(r: PromoReview): string {
 }
 
 export default function PromoList({ promos }: { promos: PromoReview[] }) {
+  const base = promoAppUrl()
   return (
     <Card title={`Promos (${promos.length})`}>
       {promos.length === 0 ? (
         <p className="text-sm text-[var(--muted)]">No analyzed promos yet.</p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {promos.map((r) => (
-            <li
-              key={r.id}
-              className="rounded-lg border border-[var(--border)] p-3 bg-[var(--background)]"
-            >
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="font-medium text-sm">{title(r)}</div>
-                <div className="flex items-center gap-2">
-                  {r.promoType && <Chip>{r.promoType}</Chip>}
-                  {r.promoStatus && <Chip>{r.promoStatus}</Chip>}
-                  {r.effectivenessScore != null && (
-                    <Chip tone={scoreTone(r.effectivenessScore)}>
-                      {r.effectivenessScore.toFixed(1)}/10
-                    </Chip>
+        <ul className="flex flex-col divide-y divide-[var(--border)]">
+          {promos.map((r) => {
+            const date = fmtDate(r.promoRunStartDate || r.date)
+            return (
+              <li
+                key={r.id}
+                className="py-3 flex items-center justify-between gap-4 flex-wrap"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">{title(r)}</div>
+                  <div className="mt-0.5 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)]">
+                    {date && <span className="tabular-nums">{date}</span>}
+                    {r.promoType && <Chip>{r.promoType}</Chip>}
+                    {r.effectivenessScore != null && (
+                      <Chip tone={scoreTone(r.effectivenessScore)}>
+                        {r.effectivenessScore.toFixed(1)}/10
+                      </Chip>
+                    )}
+                    {r.product && <span className="truncate">· {r.product}</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {base && r.sourceFile && (
+                    <a
+                      href={`${base}/api/files/${r.id}/source`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border border-[var(--border)] px-3 py-1.5 text-xs hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                    >
+                      Download promo
+                    </a>
+                  )}
+                  {base && (
+                    <a
+                      href={`${base}/?review=${r.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md bg-[var(--accent)] text-black font-medium px-3 py-1.5 text-xs hover:opacity-90 transition-opacity"
+                    >
+                      View analysis
+                    </a>
                   )}
                 </div>
-              </div>
-              <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)]">
-                {fmtDate(r.promoRunStartDate || r.date) && (
-                  <span className="tabular-nums">{fmtDate(r.promoRunStartDate || r.date)}</span>
-                )}
-                {r.product && <span>· {r.product}</span>}
-                {r.sections?.stockTease && <span>· Teases: {r.sections.stockTease}</span>}
-              </div>
-              {r.sections?.effectiveness && (
-                <p className="mt-2 text-xs text-[var(--muted)] line-clamp-3">
-                  {r.sections.effectiveness.replace(/[#*`]/g, '').slice(0, 300)}
-                </p>
-              )}
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       )}
     </Card>

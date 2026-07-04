@@ -22,13 +22,22 @@ export interface PromoReview {
   product?: string
   effectivenessScore?: number
   subScores?: { dimension: string; score: number }[]
+  sourceFile?: { filename: string; size: number }
   sections?: {
     offer?: string
     stockTease?: string
     effectiveness?: string
     headline?: string
     promoIntel?: string
+    outline?: string
+    evaldo?: string
+    cub?: string
   }
+}
+
+/** Browser-facing Promo Analyzer base URL (for download + view-analysis deep links). */
+export function promoAppUrl(): string {
+  return (getEnv('PROMO_APP_URL') || getEnv('PROMO_API_URL') || '').replace(/\/$/, '')
 }
 
 function apiUrl(): string | undefined {

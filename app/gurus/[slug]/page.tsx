@@ -80,13 +80,17 @@ export default async function GuruPage({ params }: { params: Promise<{ slug: str
         </Card>
       )}
 
-      {/* Bio + strategy sections from the brain (claims excluded) */}
+      {/* Bio + strategy sections from the brain (claims excluded). The verbose
+          "Products" prose section is dropped — the linked Products list above
+          replaces it. */}
       {profile.found ? (
-        profile.sections.map((s, i) => (
-          <Card key={i} title={s.heading}>
-            <Markdown>{s.body}</Markdown>
-          </Card>
-        ))
+        profile.sections
+          .filter((s) => !/^products$/i.test(s.heading.trim()))
+          .map((s, i) => (
+            <Card key={i} title={s.heading}>
+              <Markdown>{s.body}</Markdown>
+            </Card>
+          ))
       ) : (
         <Card title="Profile">
           <p className="text-sm text-[var(--muted)]">

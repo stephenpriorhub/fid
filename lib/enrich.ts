@@ -11,7 +11,7 @@ import { prisma } from './prisma'
 
 const MODEL = getEnv('FID_ENRICH_MODEL') || 'claude-opus-4-8'
 
-function promoCorpus(promos: PromoReview[], max = 12): string {
+function promoCorpus(promos: PromoReview[], max = 14): string {
   return promos
     .slice(0, max)
     .map((r, i) => {
@@ -19,19 +19,33 @@ function promoCorpus(promos: PromoReview[], max = 12): string {
       const parts = [
         `### Promo ${i + 1}: ${r.displayName || r.filename}`,
         r.product ? `Product: ${r.product}` : '',
-        r.effectivenessScore != null ? `Effectiveness: ${r.effectivenessScore}/10` : '',
         s.headline ? `Headline: ${s.headline}` : '',
+        // outline + evaldo + cub carry the guru bio/backstory/credibility copy —
+        // these are the sections to mine for biographical detail.
+        s.outline ? `Outline:\n${s.outline}` : '',
+        s.evaldo ? `Full copy / evaluation:\n${s.evaldo}` : '',
+        s.cub ? `Copy breakdown:\n${s.cub}` : '',
         s.offer ? `Offer:\n${s.offer}` : '',
         s.promoIntel ? `Intel:\n${s.promoIntel}` : '',
-        s.effectiveness ? `Assessment:\n${s.effectiveness}` : '',
       ].filter(Boolean)
       return parts.join('\n')
     })
     .join('\n\n')
-    .slice(0, 24000) // keep the prompt bounded
+    .slice(0, 40000) // digest more of the full promo copy
 }
 
-const GURU_SYSTEM = `You are an intelligence analyst for a financial-publishing company. From the promotional copy provided, extract a concise, factual intelligence brief on this GURU. Focus on: who they are, credibility markers/background, signature strategies and mechanisms, recurring narrative angles, and how they are positioned to readers. Do NOT restate performance/track-record claims or win-rate numbers. Do NOT invent facts. Output tight markdown (headings + bullets), 150-300 words. If the copy adds nothing beyond what is already known, output a single line: NO NEW INTEL.`
+const GURU_SYSTEM = `You are an intelligence analyst profiling a financial-publishing GURU. Promotional copy is where these gurus tell their life story — mine the bio/backstory sections thoroughly and build the richest factual biography the copy supports.
+
+Extract and organize:
+- **Background & career**: origin story, prior firms/roles, credentials, education, notable career moments, personal details used to build credibility.
+- **How they're positioned**: the persona/angle the copy sells (the "who is this person" pitch), signature methods/mechanisms, recurring themes they talk about.
+
+Rules:
+- Pull as much biographical detail as the copy provides — this is the priority.
+- Do NOT restate performance/track-record claims, win-rate numbers, or specific return figures.
+- Do NOT frame anything around Monument Traders Alliance or "strategic relevance to MTA" — this is a neutral profile of the guru, not a competitive comparison.
+- Do NOT invent facts; only use what the copy states.
+Output tight markdown (headings + bullets), up to ~350 words. If the copy adds nothing beyond what's already known, output a single line: NO NEW INTEL.`
 
 const PRODUCT_SYSTEM = `You are an intelligence analyst for a financial-publishing company. From the promotional copy provided, extract what this PRODUCT actually is and its unique selling propositions (USPs). Focus on: the core mechanism/strategy, what the subscriber gets, the differentiators/positioning, target audience, and the offer structure. Do NOT restate performance/track-record claims or win-rate numbers. Do NOT invent facts. Output tight markdown (headings + bullets), 150-300 words. If the copy adds nothing new, output a single line: NO NEW INTEL.`
 
