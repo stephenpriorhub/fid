@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGraph } from '@/lib/directory'
-import { enrichGuru, enrichProduct, type EnrichOutcome } from '@/lib/enrich'
+import { enrichGuru, enrichProduct, enrichPublisher, type EnrichOutcome } from '@/lib/enrich'
 import { verifyHubSession, isAdmin } from '@/lib/hub-auth'
 
 export const dynamic = 'force-dynamic'
@@ -34,12 +34,16 @@ export async function GET(req: NextRequest) {
 
   if (entity) {
     if (type === 'product') results.push(await enrichProduct(entity))
+    else if (type === 'publisher') results.push(await enrichPublisher(entity))
     else results.push(await enrichGuru(entity))
   } else {
-    const gurus = type === 'product' ? [] : graph.gurus.slice(0, limit).map((g) => g.name)
-    const products = type === 'guru' ? [] : graph.products.slice(0, limit).map((p) => p.name)
-    for (const g of gurus) results.push(await enrichGuru(g))
-    for (const p of products) results.push(await enrichProduct(p))
+    const all = !type
+    if (all || type === 'guru')
+      for (const g of graph.gurus.slice(0, limit)) results.push(await enrichGuru(g.name))
+    if (all || type === 'product')
+      for (const p of graph.products.slice(0, limit)) results.push(await enrichProduct(p.name))
+    if (all || type === 'publisher')
+      for (const p of graph.publishers.slice(0, limit)) results.push(await enrichPublisher(p.name))
   }
 
   const written = results.filter((r) => r.status === 'written').length

@@ -19,7 +19,7 @@ export interface WriteResult {
 }
 
 export interface EnrichmentPayload {
-  entityType: 'guru' | 'product'
+  entityType: 'guru' | 'product' | 'publisher'
   entityName: string
   /** Repo-relative path to the note, e.g. "Resources/Experts/Bryan Bottarelli.md". */
   repoPath: string
@@ -36,6 +36,15 @@ export interface EnrichmentPayload {
 const MARKER = 'finpub'
 const SECTION_TITLE_GURU = '## FinPub Intel — Bio & Positioning'
 const SECTION_TITLE_PRODUCT = '## USPs (FinPub)'
+const SECTION_TITLE_PUBLISHER = '## FinPub Intel — House Brief'
+
+function sectionTitleFor(t: EnrichmentPayload['entityType']): string {
+  return t === 'product'
+    ? SECTION_TITLE_PRODUCT
+    : t === 'publisher'
+      ? SECTION_TITLE_PUBLISHER
+      : SECTION_TITLE_GURU
+}
 
 function brainApiUrl(): string {
   return (getEnv('BRAIN_API_URL') || 'https://brain.oxfordhub.app').replace(/\/$/, '')
@@ -106,7 +115,7 @@ async function viaGithub(p: EnrichmentPayload): Promise<WriteResult> {
     accept: 'application/vnd.github+json',
     'user-agent': 'fid-enrichment',
   }
-  const title = p.entityType === 'product' ? SECTION_TITLE_PRODUCT : SECTION_TITLE_GURU
+  const title = sectionTitleFor(p.entityType)
   try {
     const getRes = await fetch(api, { headers, cache: 'no-store' })
     let current: string

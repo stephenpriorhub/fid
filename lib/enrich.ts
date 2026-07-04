@@ -5,7 +5,12 @@ import { getVaultPath } from './vault'
 import { getGraph } from './directory'
 import { getGuruProfile } from './gurus'
 import { getProductProfile } from './products'
-import { getPromosForGuru, getPromosForProduct, type PromoReview } from './promos'
+import {
+  getPromosForGuru,
+  getPromosForProduct,
+  getPromosForPublisher,
+  type PromoReview,
+} from './promos'
 import { writeEnrichment, type WriteResult } from './brain-api'
 import { prisma } from './prisma'
 
@@ -48,6 +53,18 @@ Rules:
 Output tight markdown (headings + bullets), up to ~350 words. If the copy adds nothing beyond what's already known, output a single line: NO NEW INTEL.`
 
 const PRODUCT_SYSTEM = `You are an intelligence analyst for a financial-publishing company. From the promotional copy provided, extract what this PRODUCT actually is and its unique selling propositions (USPs). Focus on: the core mechanism/strategy, what the subscriber gets, the differentiators/positioning, target audience, and the offer structure. Do NOT restate performance/track-record claims or win-rate numbers. Do NOT invent facts. Output tight markdown (headings + bullets), 150-300 words. If the copy adds nothing new, output a single line: NO NEW INTEL.`
+
+const PUBLISHER_SYSTEM = `You are an intelligence analyst profiling a financial-publishing PUBLISHER (the "house"). From the promotional copy across its products, build a house-level intelligence brief:
+- **What the house is**: its identity, the brands/newsletters and gurus it runs, its overall market positioning.
+- **Recurring themes & angles**: the topics, hooks, and promotional patterns that show up across its promos.
+- **Target audience & offer style**: who it sells to and how (front-end vs high-ticket, webinar vs VSL, guarantee patterns).
+
+Rules:
+- Synthesize across the promos; note patterns that appear in multiple.
+- Do NOT restate performance/track-record claims or specific return figures.
+- Do NOT frame around Monument Traders Alliance or "strategic relevance to MTA".
+- Do NOT invent facts.
+Output tight markdown (headings + bullets), up to ~300 words. If the copy adds nothing new, output a single line: NO NEW INTEL.`
 
 async function runModel(system: string, user: string): Promise<string | null> {
   const apiKey = getEnv('ANTHROPIC_API_KEY')
@@ -118,6 +135,31 @@ source: fid-autoseed
 `
 }
 
+function publisherStub(name: string, gurus: string[], products: string[]): string {
+  return `---
+type: publisher
+status: active
+created: ${today()}
+updated: ${today()}
+source: fid-autoseed
+---
+
+<!-- Auto-seeded by FID from promo activity. Brain Master: curate the body. -->
+
+# ${name}
+
+${gurus.length ? `**Gurus:** ${gurus.map((g) => `[[${g}]]`).join(', ')}` : ''}
+${products.length ? `**Products:** ${products.map((p) => `[[${p}]]`).join(', ')}` : ''}
+
+## FinPub Intel — House Brief
+<!-- finpub:start -->
+<!-- finpub:end -->
+
+## Log
+- **${today()}** — Auto-seeded by FID from promo activity.
+`
+}
+
 function productStub(name: string, code: string | undefined, publisher: string, gurus: string[]): string {
   return `---
 type: publication
@@ -144,7 +186,7 @@ ${gurus.length ? `**Guru:** ${gurus.map((g) => `[[${g}]]`).join(', ')}` : ''}
 }
 
 export interface EnrichOutcome {
-  entityType: 'guru' | 'product'
+  entityType: 'guru' | 'product' | 'publisher'
   entityName: string
   status: 'written' | 'no-target' | 'no-new-intel' | 'no-promos' | 'model-skipped' | 'write-failed'
   write?: WriteResult
@@ -263,6 +305,36 @@ export async function enrichProduct(name: string): Promise<EnrichOutcome> {
   const write = await writeEnrichment({ entityType: 'product', entityName: name, repoPath, markdown: stamped, stub })
   const o: EnrichOutcome = {
     entityType: 'product',
+    entityName: name,
+    status: write.ok ? 'written' : 'write-failed',
+    write,
+    promoCount: promos.length,
+  }
+  await log(o)
+  return o
+}
+
+export async function enrichPublisher(name: string): Promise<EnrichOutcome> {
+  const promos = await getPromosForPublisher(name)
+  if (promos.length === 0) {
+    const o: EnrichOutcome = { entityType: 'publisher', entityName: name, status: 'no-promos', promoCount: 0 }
+    await log(o)
+    return o
+  }
+  const node = (await getGraph()).publishers.find((p) => p.name === name)
+  // Publishers are derived entities — always self-seed a house note under Publishers/.
+  const repoPath = `Resources/Publishers/${name}.md`
+  const stub = publisherStub(name, node?.gurus || [], node?.products || [])
+
+  const user = `PUBLISHER (house): ${name}\nGurus: ${(node?.gurus || []).join(', ') || '(unknown)'}\nProducts: ${(node?.products || []).join(', ') || '(unknown)'}\n\nPROMOTIONAL COPY ACROSS ITS PRODUCTS:\n${promoCorpus(promos)}`
+  const out = await runModel(PUBLISHER_SYSTEM, user)
+  const hasIntel = !!out && !/^NO NEW INTEL/i.test(out.trim())
+  const stamped = hasIntel
+    ? `${out!.trim()}\n\n_Last enriched by FID from ${promos.length} promo(s) across the house._`
+    : `_Auto-seeded from ${promos.length} promo(s); house brief pending next enrichment._`
+  const write = await writeEnrichment({ entityType: 'publisher', entityName: name, repoPath, markdown: stamped, stub })
+  const o: EnrichOutcome = {
+    entityType: 'publisher',
     entityName: name,
     status: write.ok ? 'written' : 'write-failed',
     write,

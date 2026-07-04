@@ -7,6 +7,7 @@ import { getRecentEmails } from '@/lib/ispy'
 import { slugify } from '@/lib/slug'
 import PromoList from '@/components/PromoList'
 import RecentEmails from '@/components/RecentEmails'
+import Markdown from '@/components/Markdown'
 import { Card, Chip, TagLink } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,12 @@ export default async function PublisherPage({ params }: { params: Promise<{ slug
         </div>
         {ctx.note && <p className="text-sm text-[var(--muted)] mt-2">{ctx.note}</p>}
       </div>
+
+      {ctx.houseBrief && (
+        <Card title="FID Intel — House Brief">
+          <Markdown>{ctx.houseBrief}</Markdown>
+        </Card>
+      )}
 
       <Card title={`Gurus (${node.gurus.length})`}>
         {node.gurus.length === 0 ? (
