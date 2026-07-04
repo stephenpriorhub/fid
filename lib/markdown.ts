@@ -73,29 +73,41 @@ export function parseDoc(source: string): ParsedDoc {
  * (H3+) beneath it is dropped too — the parser flattens hierarchy, so we track
  * the excluded level and skip until a heading of equal-or-higher rank appears.
  */
-export function stripClaims(sections: Section[]): Section[] {
+/**
+ * Drop every section whose heading matches `predicate`, PLUS all deeper
+ * subsections beneath it (the parser flattens hierarchy, so we track the
+ * excluded level and skip until a heading of equal-or-higher rank appears).
+ */
+export function dropSectionTree(
+  sections: Section[],
+  predicate: (s: Section) => boolean
+): Section[] {
   const out: Section[] = []
   let dropDeeperThan: number | null = null
   for (const s of sections) {
     if (dropDeeperThan !== null) {
-      if (s.level > dropDeeperThan) continue // still inside the excluded block
-      dropDeeperThan = null // rank returned to the excluded heading's level or higher
+      if (s.level > dropDeeperThan) continue
+      dropDeeperThan = null
     }
-    if (isClaimsHeading(s.heading)) {
+    if (predicate(s)) {
       dropDeeperThan = s.level
       continue
     }
-    out.push({
-      ...s,
-      body: s.body
-        .replace(CLAIMS_OWNER_BLOCK, '')
-        .split('\n')
-        .filter((l) => !AIRTABLE_LINE.test(l))
-        .join('\n')
-        .trim(),
-    })
+    out.push(s)
   }
   return out
+}
+
+export function stripClaims(sections: Section[]): Section[] {
+  return dropSectionTree(sections, (s) => isClaimsHeading(s.heading)).map((s) => ({
+    ...s,
+    body: s.body
+      .replace(CLAIMS_OWNER_BLOCK, '')
+      .split('\n')
+      .filter((l) => !AIRTABLE_LINE.test(l))
+      .join('\n')
+      .trim(),
+  }))
 }
 
 /** Find the first section whose heading matches (case-insensitive substring). */
