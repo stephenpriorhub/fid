@@ -277,10 +277,14 @@ export async function getGraph(): Promise<EntityGraph> {
 
   // Defensive de-misclassification: upstream review data sometimes lists a product
   // name (e.g. "Oxford Income Letter") as a publisher. If a publisher slug is also
-  // a product slug, it's a misfiled product — drop the bogus publisher node so it
-  // doesn't get its own publisher page. (The real product page still exists.)
+  // a product slug, drop it as a misfiled product — BUT only when it's a phantom
+  // (no gurus of its own). A real house whose name matches a product (e.g. Behind
+  // The Markets, where the publisher and its front-end share a name) has gurus, so
+  // it's kept.
   const productSlugs = new Set(merged.products.map((p) => p.slug))
-  merged.publishers = merged.publishers.filter((pub) => !productSlugs.has(pub.slug))
+  merged.publishers = merged.publishers.filter(
+    (pub) => !productSlugs.has(pub.slug) || pub.gurus.length > 0
+  )
   return merged
 }
 
