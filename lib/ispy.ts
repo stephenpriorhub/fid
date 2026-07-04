@@ -10,6 +10,8 @@ const REVALIDATE = 300 // 5 min
 
 export interface IspyEmail {
   id: string
+  /** Deep link to the full email in iSpy (/emails/:id). */
+  url?: string
   subject: string
   fromName?: string | null
   fromEmail: string
@@ -102,8 +104,12 @@ export async function getRecentEmails(
   )
   const base = appUrl()
   const viewAllUrl = base ? `${base}/emails?${param}=${encodeURIComponent(id)}` : null
+  const emails = (data?.emails ?? []).map((e) => ({
+    ...e,
+    url: base ? `${base}/emails/${e.id}` : undefined,
+  }))
   return {
-    emails: data?.emails ?? [],
+    emails,
     total: data?.total ?? 0,
     viewAllUrl,
   }

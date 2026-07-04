@@ -1,5 +1,6 @@
 import { getEnv } from './env'
 import { slugify } from './slug'
+import { canonicalPublisher, canonicalGuru } from './canon'
 import type { EntityGraph, GuruNode, ProductNode, PublisherNode } from './directory'
 
 /**
@@ -97,7 +98,7 @@ export async function getEntitiesGraph(): Promise<EntityGraph | null> {
   }
 
   for (const pub of data.publishers) {
-    const pubName = cleanName(pub.name)
+    const pubName = canonicalPublisher(cleanName(pub.name))
     if (!pubName || isRemoved('publisher', pubName)) continue
     const pubSlug = slugify(pubName)
     if (!publishers.has(pubSlug))
@@ -105,7 +106,7 @@ export async function getEntitiesGraph(): Promise<EntityGraph | null> {
     const pubNode = publishers.get(pubSlug)!
 
     for (const g of pub.gurus || []) {
-      const gName = cleanName(g.name)
+      const gName = canonicalGuru(cleanName(g.name))
       if (!gName || isRemoved('guru', gName)) continue
       uniqPush(pubNode.gurus, gName)
       uniqPush(guru(gName).publishers, pubName)
@@ -116,7 +117,7 @@ export async function getEntitiesGraph(): Promise<EntityGraph | null> {
       uniqPush(pubNode.products, prName)
       const pNode = product(prName, pr.pubCode, pubName)
       if (pr.guru) {
-        const gName = cleanName(pr.guru)
+        const gName = canonicalGuru(cleanName(pr.guru))
         if (!isRemoved('guru', gName)) {
           uniqPush(pNode.gurus, gName)
           uniqPush(guru(gName).products, prName)

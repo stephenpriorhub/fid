@@ -1,5 +1,5 @@
 import { Card, Chip, scoreTone } from './ui'
-import { promoAppUrl, type PromoReview } from '@/lib/promos'
+import { promoAppUrl, getPerformanceByReview, type PromoReview } from '@/lib/promos'
 
 function fmtDate(iso?: string): string {
   if (!iso) return ''
@@ -11,8 +11,10 @@ function title(r: PromoReview): string {
   return r.displayName || r.filename.replace(/\.[^.]+$/, '')
 }
 
-export default function PromoList({ promos }: { promos: PromoReview[] }) {
+export default async function PromoList({ promos }: { promos: PromoReview[] }) {
   const base = promoAppUrl()
+  const perf = await getPerformanceByReview()
+
   return (
     <Card title={`Promos (${promos.length})`}>
       {promos.length === 0 ? (
@@ -21,22 +23,24 @@ export default function PromoList({ promos }: { promos: PromoReview[] }) {
         <ul className="flex flex-col divide-y divide-[var(--border)]">
           {promos.map((r) => {
             const date = fmtDate(r.promoRunStartDate || r.date)
+            const copy = r.effectivenessScore
+            const real = r.training?.performanceScore
+            const p = perf[r.id]
             return (
-              <li
-                key={r.id}
-                className="py-3 flex items-center justify-between gap-4 flex-wrap"
-              >
+              <li key={r.id} className="py-3 flex items-center justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
                   <div className="font-medium text-sm">{title(r)}</div>
-                  <div className="mt-0.5 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)]">
+                  <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)]">
                     {date && <span className="tabular-nums">{date}</span>}
                     {r.promoType && <Chip>{r.promoType}</Chip>}
-                    {r.effectivenessScore != null && (
-                      <Chip tone={scoreTone(r.effectivenessScore)}>
-                        {r.effectivenessScore.toFixed(1)}/10
-                      </Chip>
+                    {copy != null && (
+                      <Chip tone={scoreTone(copy)}>Copy {copy.toFixed(1)}/10</Chip>
                     )}
-                    {r.product && <span className="truncate">· {r.product}</span>}
+                    {real != null && (
+                      <Chip tone={scoreTone(real)}>Real-world {real.toFixed(1)}/10</Chip>
+                    )}
+                    {p?.orders && <Chip>Orders {p.orders}</Chip>}
+                    {p?.revenue && <Chip>Revenue {p.revenue}</Chip>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

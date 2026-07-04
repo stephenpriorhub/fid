@@ -20,8 +20,9 @@ export interface PromoReview {
   publisher?: string
   gurus?: string[]
   product?: string
-  effectivenessScore?: number
+  effectivenessScore?: number // copy quality score (0–10)
   subScores?: { dimension: string; score: number }[]
+  training?: { performanceScore?: number | null; myScore?: number | null }
   sourceFile?: { filename: string; size: number }
   sections?: {
     offer?: string
@@ -38,6 +39,49 @@ export interface PromoReview {
 /** Browser-facing Promo Analyzer base URL (for download + view-analysis deep links). */
 export function promoAppUrl(): string {
   return (getEnv('PROMO_APP_URL') || getEnv('PROMO_API_URL') || '').replace(/\/$/, '')
+}
+
+export interface PromoPerf {
+  orders?: string
+  revenue?: string
+}
+
+/**
+ * Real-world orders/revenue per review, from Promo Analyzer's performance dataset
+ * (`GET /api/performance` → views join a performance record to a review). Orders
+ * and revenue are raw sheet columns; we pick the first header that looks right.
+ */
+export async function getPerformanceByReview(): Promise<Record<string, PromoPerf>> {
+  const base = apiUrl()
+  if (!base) return {}
+  try {
+    const res = await fetch(`${base}/api/performance`, {
+      headers: authHeaders(),
+      next: { revalidate: REVALIDATE },
+    })
+    if (!res.ok) return {}
+    const views = (await res.json()) as {
+      record?: { stats?: Record<string, string> }
+      match?: { reviewId?: string } | null
+    }[]
+    const out: Record<string, PromoPerf> = {}
+    for (const v of Array.isArray(views) ? views : []) {
+      const rid = v.match?.reviewId
+      const stats = v.record?.stats
+      if (!rid || !stats) continue
+      const pick = (re: RegExp) => {
+        const k = Object.keys(stats).find((h) => re.test(h))
+        const val = k ? stats[k]?.trim() : undefined
+        return val || undefined
+      }
+      const orders = pick(/\border(s|ed|\s*volume)?\b/i)
+      const revenue = pick(/revenue|net\s*sales|gross|\bsales\b/i)
+      if (orders || revenue) out[rid] = { orders, revenue }
+    }
+    return out
+  } catch {
+    return {}
+  }
 }
 
 function apiUrl(): string | undefined {

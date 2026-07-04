@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs'
 import { getDirectoryPath } from './vault'
 import { slugify } from './slug'
 import { stripWikilinks } from './markdown'
+import { canonicalPublisher, canonicalGuru } from './canon'
 
 export interface DirectoryRow {
   gurus: string[] // one row can be co-authored ("A + B")
@@ -51,16 +52,11 @@ export interface EntityGraph {
 
 const CODE_RE = /^[A-Z][A-Za-z0-9]{0,7}$/ // short uppercase code like WAR, TPU, PMK, MTLIV
 
-/**
- * Normalize a parent-company cell to a clean publisher identity so it dedupes
- * against Promo Analyzer's clean names: drop a trailing "(...)" family/status
- * suffix (e.g. "Paradigm Press (Agora)" → "Paradigm Press",
- * "Money Map Press (Agora, defunct)" → "Money Map Press"). Falls back to
- * "Independent" when the cell is only a parenthetical note.
- */
-function normalizePublisher(name: string): string {
-  const stripped = name.replace(/\s*\([^)]*\)\s*$/, '').trim()
-  return stripped || 'Independent'
+/** Split a markdown table row on unescaped pipes, then unescape `\|` → `|`. */
+function splitRow(line: string): string[] {
+  return line
+    .split(/(?<!\\)\|/)
+    .map((c) => c.replace(/\\\|/g, '|').trim())
 }
 
 function splitList(cell: string): string[] {
@@ -73,7 +69,7 @@ function splitList(cell: string): string[] {
 function parseGuruCell(cell: string): string[] {
   return stripWikilinks(cell)
     .split(/\s*\+\s*/)
-    .map((s) => s.trim())
+    .map((s) => canonicalGuru(s.trim()))
     .filter(Boolean)
 }
 
@@ -111,7 +107,7 @@ export function parseDirectoryRows(md: string): DirectoryRow[] {
   const rows: DirectoryRow[] = []
   for (const line of md.split('\n')) {
     if (!line.trim().startsWith('|')) continue
-    const cells = line.split('|').map((c) => c.trim())
+    const cells = splitRow(line)
     // Leading/trailing empty cells from the surrounding pipes.
     const cols = cells.slice(1, -1)
     if (cols.length < 6) continue
@@ -127,7 +123,7 @@ export function parseDirectoryRows(md: string): DirectoryRow[] {
       productName: name,
       productCode: code,
       isAlias,
-      publisher: normalizePublisher(stripWikilinks(parent)),
+      publisher: canonicalPublisher(stripWikilinks(parent)),
       strategies: splitList(strategies),
       topics: splitList(topics),
       confidence: (confidence.split(/[\s(]/)[0] || confidence).toLowerCase(),
