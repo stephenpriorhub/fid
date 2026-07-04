@@ -78,6 +78,71 @@ function repoRelative(absPath?: string): string | null {
   return rel.startsWith('..') ? null : rel
 }
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * Minimal, convention-conforming stub note created when a guru/product has promo
+ * activity but no brain note yet. Includes empty `ispy` markers (so the iSpy email
+ * pipeline can populate "Currently Talking About") and `finpub` markers (spliced by
+ * the writer). The curated body is left for Brain Master; FID only owns finpub.
+ */
+function guruStub(name: string, publisher: string | undefined, isMTA: boolean): string {
+  const pubLink = publisher ? ` · [[${publisher}]]` : ''
+  return `---
+status: active
+tags: [${isMTA ? 'editor' : 'competitor'}]
+created: ${today()}
+updated: ${today()}
+source: fid-autoseed
+---
+
+<!-- Auto-seeded by FID from promo/email activity. Brain Master: curate the body.
+     Machine writers append only inside their marker blocks. -->
+
+# ${name}
+
+**Role**: Editor${pubLink}
+
+## iSpy — Currently Talking About
+<!-- ispy:start -->
+<!-- ispy:end -->
+
+## FinPub Intel — Bio & Positioning
+<!-- finpub:start -->
+<!-- finpub:end -->
+
+## Log
+- **${today()}** — Auto-seeded by FID from promo activity.
+`
+}
+
+function productStub(name: string, code: string | undefined, publisher: string, gurus: string[]): string {
+  return `---
+type: publication
+status: active
+created: ${today()}
+updated: ${today()}
+source: fid-autoseed
+---
+
+<!-- Auto-seeded by FID from promo activity. Brain Master: curate the body. -->
+
+# ${name}${code ? ` [${code}]` : ''}
+
+**Parent Company:** ${publisher ? `[[${publisher}]]` : 'Unknown'}
+${gurus.length ? `**Guru:** ${gurus.map((g) => `[[${g}]]`).join(', ')}` : ''}
+
+## USPs (FinPub)
+<!-- finpub:start -->
+<!-- finpub:end -->
+
+## Log
+- **${today()}** — Auto-seeded by FID from promo activity.
+`
+}
+
 export interface EnrichOutcome {
   entityType: 'guru' | 'product'
   entityName: string
@@ -113,27 +178,41 @@ export async function enrichGuru(name: string): Promise<EnrichOutcome> {
     return o
   }
   const profile = getGuruProfile(name)
-  const repoPath = repoRelative(profile.sourcePath)
+  const node = (await getGraph()).gurus.find((g) => g.name === name)
+  const existingPath = repoRelative(profile.sourcePath)
+
+  // Self-seed a note when one doesn't exist yet, so every guru with activity gets
+  // a profile that both FID and the iSpy email pipeline can keep teaching.
+  let repoPath = existingPath
+  let stub: string | undefined
   if (!repoPath) {
-    const o: EnrichOutcome = { entityType: 'guru', entityName: name, status: 'no-target', promoCount: promos.length }
-    await log(o)
-    return o
+    const publisher = node?.publishers[0]
+    const isMTA = (node?.publishers || []).some((p) => /monument traders/i.test(p))
+    repoPath = `Resources/${isMTA ? 'Experts' : 'Competitors'}/${name}.md`
+    stub = guruStub(name, publisher, isMTA)
   }
+
   const known = profile.sections.map((s) => `## ${s.heading}\n${s.body}`).join('\n\n').slice(0, 8000)
   const user = `GURU: ${name}\n\nALREADY IN THE BRAIN (do not repeat):\n${known || '(none)'}\n\nPROMOTIONAL COPY:\n${promoCorpus(promos)}`
   const out = await runModel(GURU_SYSTEM, user)
-  if (!out) {
-    const o: EnrichOutcome = { entityType: 'guru', entityName: name, status: 'model-skipped', promoCount: promos.length }
+  const hasIntel = !!out && !/^NO NEW INTEL/i.test(out.trim())
+
+  // Existing note + nothing new → skip. New note → seed it even without fresh bio,
+  // so the profile exists for future enrichment + the email pipeline.
+  if (!hasIntel && existingPath) {
+    const o: EnrichOutcome = {
+      entityType: 'guru',
+      entityName: name,
+      status: out ? 'no-new-intel' : 'model-skipped',
+      promoCount: promos.length,
+    }
     await log(o)
     return o
   }
-  if (/^NO NEW INTEL/i.test(out.trim())) {
-    const o: EnrichOutcome = { entityType: 'guru', entityName: name, status: 'no-new-intel', promoCount: promos.length }
-    await log(o)
-    return o
-  }
-  const stamped = `${out.trim()}\n\n_Last enriched by FID from ${promos.length} promo(s)._`
-  const write = await writeEnrichment({ entityType: 'guru', entityName: name, repoPath, markdown: stamped })
+  const stamped = hasIntel
+    ? `${out!.trim()}\n\n_Last enriched by FID from ${promos.length} promo(s)._`
+    : `_Auto-seeded from ${promos.length} promo(s); bio pending next enrichment._`
+  const write = await writeEnrichment({ entityType: 'guru', entityName: name, repoPath, markdown: stamped, stub })
   const o: EnrichOutcome = {
     entityType: 'guru',
     entityName: name,
@@ -154,27 +233,34 @@ export async function enrichProduct(name: string): Promise<EnrichOutcome> {
     return o
   }
   const profile = getProductProfile(name, node?.code)
-  const repoPath = repoRelative(profile.sourcePath)
+  const existingPath = repoRelative(profile.sourcePath)
+
+  let repoPath = existingPath
+  let stub: string | undefined
   if (!repoPath) {
-    const o: EnrichOutcome = { entityType: 'product', entityName: name, status: 'no-target', promoCount: promos.length }
-    await log(o)
-    return o
+    repoPath = `Resources/Publication Descriptions/${name}.md`
+    stub = productStub(name, node?.code, node?.publisher || '', node?.gurus || [])
   }
+
   const known = profile.sections.map((s) => `## ${s.heading}\n${s.body}`).join('\n\n').slice(0, 8000)
   const user = `PRODUCT: ${name}\n\nALREADY IN THE BRAIN (do not repeat):\n${known || '(none)'}\n\nPROMOTIONAL COPY:\n${promoCorpus(promos)}`
   const out = await runModel(PRODUCT_SYSTEM, user)
-  if (!out) {
-    const o: EnrichOutcome = { entityType: 'product', entityName: name, status: 'model-skipped', promoCount: promos.length }
+  const hasIntel = !!out && !/^NO NEW INTEL/i.test(out.trim())
+
+  if (!hasIntel && existingPath) {
+    const o: EnrichOutcome = {
+      entityType: 'product',
+      entityName: name,
+      status: out ? 'no-new-intel' : 'model-skipped',
+      promoCount: promos.length,
+    }
     await log(o)
     return o
   }
-  if (/^NO NEW INTEL/i.test(out.trim())) {
-    const o: EnrichOutcome = { entityType: 'product', entityName: name, status: 'no-new-intel', promoCount: promos.length }
-    await log(o)
-    return o
-  }
-  const stamped = `${out.trim()}\n\n_Last enriched by FID from ${promos.length} promo(s)._`
-  const write = await writeEnrichment({ entityType: 'product', entityName: name, repoPath, markdown: stamped })
+  const stamped = hasIntel
+    ? `${out!.trim()}\n\n_Last enriched by FID from ${promos.length} promo(s)._`
+    : `_Auto-seeded from ${promos.length} promo(s); USPs pending next enrichment._`
+  const write = await writeEnrichment({ entityType: 'product', entityName: name, repoPath, markdown: stamped, stub })
   const o: EnrichOutcome = {
     entityType: 'product',
     entityName: name,

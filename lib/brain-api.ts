@@ -25,6 +25,12 @@ export interface EnrichmentPayload {
   repoPath: string
   /** Markdown to place inside the finpub marker block. */
   markdown: string
+  /**
+   * Full note content to CREATE when the file doesn't exist yet (self-seed).
+   * Must contain empty `<!-- finpub:start/end -->` markers; the markdown is spliced in.
+   * Omit to only update existing notes.
+   */
+  stub?: string
 }
 
 const MARKER = 'finpub'
@@ -50,6 +56,7 @@ async function viaBrainApi(p: EnrichmentPayload): Promise<WriteResult | null> {
         repoPath: p.repoPath,
         marker: MARKER,
         markdown: p.markdown,
+        stub: p.stub,
       }),
     })
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
@@ -99,25 +106,31 @@ async function viaGithub(p: EnrichmentPayload): Promise<WriteResult> {
     accept: 'application/vnd.github+json',
     'user-agent': 'fid-enrichment',
   }
+  const title = p.entityType === 'product' ? SECTION_TITLE_PRODUCT : SECTION_TITLE_GURU
   try {
     const getRes = await fetch(api, { headers, cache: 'no-store' })
-    if (!getRes.ok) {
+    let current: string
+    let sha: string | undefined
+    if (getRes.ok) {
+      const file = (await getRes.json()) as { sha: string; content: string; encoding: string }
+      current = Buffer.from(file.content, file.encoding as BufferEncoding).toString('utf8')
+      sha = file.sha
+    } else if (getRes.status === 404 && p.stub) {
+      current = p.stub // self-seed a new note
+    } else {
       return { ok: false, via: 'github', target: p.repoPath, bytes: 0, error: `GET ${getRes.status}` }
     }
-    const file = (await getRes.json()) as { sha: string; content: string; encoding: string }
-    const current = Buffer.from(file.content, file.encoding as BufferEncoding).toString('utf8')
-    const title = p.entityType === 'product' ? SECTION_TITLE_PRODUCT : SECTION_TITLE_GURU
     const updated = spliceMarkerBlock(current, p.markdown, title)
-    if (updated === current) {
+    if (sha && updated === current) {
       return { ok: true, via: 'github', target: p.repoPath, bytes: 0 } // no-op
     }
     const putRes = await fetch(api, {
       method: 'PUT',
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({
-        message: `FID enrichment: ${p.entityName}`,
+        message: sha ? `FID enrichment: ${p.entityName}` : `FID: seed + enrich ${p.entityName}`,
         content: Buffer.from(updated, 'utf8').toString('base64'),
-        sha: file.sha,
+        ...(sha ? { sha } : {}),
       }),
     })
     if (!putRes.ok) {
